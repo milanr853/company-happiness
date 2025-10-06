@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Company Happiness Index",
+  "version": "1.0.0",
+  "description": "Shows work-life balance and sentiment scores on job pages.",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": "icon.svg"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://www.glassdoor.co.in/*",
+        "https://www.ambitionbox.com/*"
+      ],
+      // FIX: CSS entry REMOVED. We will load CSS inside the JS script.
+      "js": ["content-script.js"]
+    }
+  ],
+  // Retaining the web_accessible_resources block for safety
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content-script.js",
+        "index.css",
+        "assets/*"
+      ],
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://www.glassdoor.co.in/*",
+        "https://www.ambitionbox.com/*"
+      ]
+    }
+  ]
+}
+

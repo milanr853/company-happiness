@@ -1,0 +1,13 @@
+/frontend/node_modules
+/frontend/package-lock.json
+/frontend/dist
+/frontend/tsconfig.tsbuildinfo
+
+# Python
+/backend/venv
+/backend/__pycache__
+
+# General
+.DS_Store
+.env
+

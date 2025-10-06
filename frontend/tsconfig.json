@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    // Retaining ES2024 target as it was the most explicitly listed valid target.
+    "target": "ES2024", 
+    "useDefineForClassFields": true,
+    
+    // FINAL, DEFINITIVE FIX: Simplify the 'lib' array to the absolute minimum 
+    // common set to bypass the DOMIterable error on your compiler version.
+    "lib": ["ES2024", "DOM"], 
+    
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    
+    // CRITICAL FIX: Add "chrome-types" to the types array here
+    "types": ["chrome-types"] 
+  },
+  "include": ["src"],
+  
+  // FIX 2: Remove the problematic "references" array completely, 
+  // as it causes the TS6306/TS6310 errors.
+  "exclude": ["node_modules", "dist"]
+}
+

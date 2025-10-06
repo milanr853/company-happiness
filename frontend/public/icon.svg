@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- The main body of the icon: a solid indigo circle -->
+  <circle cx="8" cy="8" r="7" fill="#6366F1"/>
+  <!-- Optional: Add a subtle white outline to look like a sun/star/rating -->
+  <path fill="#ffffff" d="M8 3.5 L9.5 6.5 L12.5 7 L10.5 9 L11 12 L8 10.5 L5 12 L5.5 9 L3.5 7 L6.5 6.5 Z" transform="scale(0.3) translate(18, 18)"/>
+</svg>
