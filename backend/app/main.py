@@ -1,12 +1,13 @@
 # FastAPI Main Application: company-happiness/backend/app/main.py
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware # NEW: Import CORS middleware
 from dotenv import load_dotenv
 import redis
 import os
 import json
 from .models import CompanyScore, FactorScore 
 from .scraper import get_company_data
-from .gemini_service import GeminiService # Import the Gemini Service
+from .gemini_service import GeminiService 
 
 # Load environment variables (REDIS_HOST, REDIS_PORT, GEMINI_API_KEY)
 load_dotenv()
@@ -18,6 +19,24 @@ app = FastAPI(
     description="Backend service for fetching company happiness scores via Gemini Pro.",
     root_path="/api/v1"
 )
+
+# --- CORS Configuration ---
+# REQUIRED: Allows the Chrome Extension (different origin) to talk to the local FastAPI server.
+origins = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    # Allow all origins for local testing with the extension ID prefix
+    "chrome-extension://*", 
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allowing '*' for all origins during development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # --- Global Service Initialization ---
 # Initialize Redis and Gemini Service once at startup
@@ -38,13 +57,13 @@ async def startup_event():
         print(f"Redis connection FAILED (running without caching): {e}")
         app.state.redis = None 
 
-    # 2. Initialize Gemini Service (Will fail if API key is invalid/missing)
+    # 2. Initialize Gemini Service 
     try:
         app.state.gemini_service = GeminiService()
         print("GeminiService initialization SUCCESSFUL.")
     except Exception as e:
         print(f"GeminiService initialization FAILED: {e}")
-        app.state.gemini_service = None # Set to None if initialization fails
+        app.state.gemini_service = None 
 
 
 @app.on_event("shutdown")

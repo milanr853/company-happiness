@@ -1,73 +1,125 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { getCompanyScore, CompanyScore, FactorScore } from './apiService';
+import './index.css';
 
-// The main component rendered in the extension popup (index.html)
-function App() {
-  const [companyScore, setCompanyScore] = useState(3.8);
-  const [isLoading, setIsLoading] = useState(false);
+// Use the hardcoded company ID from our mock data for testing
+const DEFAULT_COMPANY_ID = 'TCS';
 
-  const fetchScore = () => {
-    setIsLoading(true);
-    // Simulate fetching the score from the future FastAPI backend
-    setTimeout(() => {
-      const newScore = (Math.random() * (4.5 - 3.0) + 3.0).toFixed(1);
-      setCompanyScore(parseFloat(newScore));
-      setIsLoading(false);
-    }, 1500);
-  };
-  
-  // Tailwind classes ensure a clean, modern look inside the small popup window
-  return (
-    <div className="p-4 w-[300px] h-[350px] font-sans bg-gray-50 flex flex-col space-y-4">
-      <h1 className="text-xl font-bold text-indigo-700">
-        Company Happiness Index
-      </h1>
-      
-      <div className="bg-white p-4 rounded-xl shadow-lg border border-indigo-200 flex-grow">
-        <p className="text-sm font-medium text-gray-500 mb-2">
-          Overall Score (Simulated)
-        </p>
-        
-        <div className="flex items-end justify-between mb-4">
-          <span className="text-6xl font-extrabold text-green-600">
-            {companyScore}
-          </span>
-          <span className="text-2xl text-gray-400">/ 5.0</span>
+// --- Component for a Single Factor ---
+const FactorItem: React.FC<{ factor: FactorScore }> = ({ factor }) => (
+    <div className="flex items-start justify-between py-2 border-b border-gray-100">
+        <div className="flex-1">
+            <p className="text-sm font-semibold text-gray-700">{factor.factor_name}</p>
+            <p className="text-xs text-indigo-600 italic mt-0.5">{factor.description}</p>
         </div>
-        
-        <p className="text-xs text-gray-500 italic">
-          This data is currently static. Next step is to connect to FastAPI.
+        <p className={`text-md font-bold ml-4 ${factor.score >= 3.5 ? 'text-green-600' : factor.score >= 2.5 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {factor.score.toFixed(1)}
         </p>
-        
-        <div className="mt-4">
-          <h2 className="text-md font-semibold text-gray-700 mb-2">Key Factors</h2>
-          <ul className="text-sm space-y-1">
-            <li className="flex justify-between items-center text-gray-600">
-              Work-Life Balance: <span className="font-semibold text-indigo-500">4.1</span>
-            </li>
-            <li className="flex justify-between items-center text-gray-600">
-              Culture & Ethics: <span className="font-semibold text-indigo-500">3.5</span>
-            </li>
-            <li className="flex justify-between items-center text-gray-600">
-              Salary & Growth: <span className="font-semibold text-indigo-500">3.8</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-      
-      <button
-        onClick={fetchScore}
-        disabled={isLoading}
-        className={`w-full py-2 rounded-lg text-white font-semibold transition duration-150 ${
-          isLoading
-            ? 'bg-indigo-300 cursor-not-allowed'
-            : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-md hover:shadow-lg'
-        }`}
-      >
-        {isLoading ? 'Loading Score...' : 'Refresh Score'}
-      </button>
-      
     </div>
-  );
+);
+
+// --- Main Popup Component ---
+function App() {
+    const [scoreData, setScoreData] = useState<CompanyScore | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchScore = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        setScoreData(null);
+        try {
+            // Note: This calls the local FastAPI server at http://localhost:8000/api/v1/score/TCS
+            const data = await getCompanyScore(DEFAULT_COMPANY_ID);
+            setScoreData(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "An unknown error occurred.");
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        // Fetch data automatically when the popup opens
+        fetchScore();
+    }, [fetchScore]);
+
+    // Render Logic for different states
+    const renderContent = () => {
+        if (isLoading) {
+            return (
+                <div className="text-center p-6">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto"></div>
+                    <p className="mt-4 text-gray-500">Analyzing reviews with Gemini Pro...</p>
+                </div>
+            );
+        }
+
+        if (error) {
+            return (
+                <div className="p-4 bg-red-100 border border-red-400 rounded-lg">
+                    <p className="text-red-700 font-bold mb-1">Error Loading Data</p>
+                    <p className="text-sm text-red-600">{error}</p>
+                    <button
+                        onClick={fetchScore}
+                        className="mt-3 w-full py-1.5 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            );
+        }
+
+        if (scoreData) {
+            return (
+                <div>
+                    <div className="flex items-center justify-between p-4 bg-indigo-50 rounded-t-xl">
+                        <div>
+                            <p className="text-sm text-indigo-700 font-medium">Overall Score ({scoreData.company_id})</p>
+                            <h1 className="text-4xl font-extrabold text-indigo-900 mt-1">
+                                {scoreData.overall_score.toFixed(2)}
+                                <span className="text-xl font-normal text-indigo-600">/ 5.0</span>
+                            </h1>
+                        </div>
+                        <div className="text-right">
+                            <p className={`text-xs font-semibold ${scoreData.status.includes('Mock') ? 'text-red-500' : 'text-green-600'}`}>
+                                Status: {scoreData.status.replace('Scoring Active', 'Live')}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {scoreData.is_cached ? 'Cached Data' : 'Live Analysis'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="p-4">
+                        <h2 className="text-lg font-bold text-gray-800 mb-2">Key Factors (AI Analysis)</h2>
+                        <div className="space-y-1">
+                            {scoreData.key_factors.map((factor, index) => (
+                                <FactorItem key={index} factor={factor} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+    };
+
+    return (
+        <div className="w-80 min-h-[250px] font-sans bg-white shadow-xl rounded-xl overflow-hidden">
+            {renderContent()}
+
+            {!isLoading && !error && (
+                <div className="p-4 border-t border-gray-100">
+                    <button
+                        onClick={fetchScore}
+                        className="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
+                    >
+                        Refresh Score
+                    </button>
+                </div>
+            )}
+        </div>
+    );
 }
 
 export default App;

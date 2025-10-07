@@ -1,39 +1,72 @@
-// This script runs when the user is on a matching URL 
-// (e.g., https://www.linkedin.com/*, https://www.glassdoor.co.in/*).
-// It's the primary way the extension interacts with the job site's DOM.
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import InjectedApp from './InjectedApp'; 
+import './index.css';
 
-console.log("Company Happiness Index Content Script loaded.");
+// --- Global Setup ---
+const ROOT_ID = 'company-happiness-root'; 
 
-// Send a simple message back to the extension's background script or popup.
-// This is essential for the extension architecture (content <-> popup communication).
-chrome.runtime.sendMessage({ 
-    action: "PAGE_LOADED", 
-    url: window.location.href 
-});
+function findInjectionTarget(): { companyId: string, targetElement: HTMLElement | null } {
+    // We are still mocking the company ID for demonstration
+    const mockCompanyId = "TCS"; 
 
-/**
- * Placeholder function for injecting the score widget (Feature v)
- * We will build this out in Phase 1, Week 4.
- */
-function injectWidget() {
-    // --- Future DOM Injection Logic Goes Here ---
-    // Example: Find the company name on LinkedIn, then inject a small
-    // React component nearby to display the score fetched from the FastAPI backend.
+    // Injecting into document.body causes conflicts on complex sites.
+    // Instead, we always use document.documentElement (the <html> tag) for fixed injection.
+    const target = document.documentElement; 
 
-    const body = document.body;
-    if (body) {
-        // We will add a simple, visible indicator for now to confirm the script is running
-        const indicator = document.createElement('div');
-        indicator.textContent = 'CHI Script Active';
-        indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 99999; background: #6366F1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 10px; opacity: 0.7;';
-        // body.appendChild(indicator); // Commented out to avoid confusing the user on live sites for now
+    return { 
+        companyId: mockCompanyId, 
+        targetElement: target 
+    };
+}
+
+
+function injectReactApp(companyId: string, targetElement: HTMLElement) {
+    if (document.getElementById(ROOT_ID)) {
+        console.log("Company Happiness Index: Widget already injected.");
+        return;
+    }
+
+    // 1. Create a container div
+    const container = document.createElement('div');
+    container.id = ROOT_ID;
+    
+    // Use fixed positioning to ensure the banner is visible regardless of scroll
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.right = '0';
+    container.style.zIndex = '99999'; // High z-index to overlay LinkedIn's UI
+    
+    // 2. Append the container to the chosen target (<html>)
+    targetElement.prepend(container);
+
+    // 3. Render the React component into the container
+    const root = ReactDOM.createRoot(container);
+    root.render(
+        <React.StrictMode>
+            <InjectedApp companyId={companyId} />
+        </React.StrictMode>
+    );
+    console.log(`Company Happiness Index: Widget injected for ${companyId}.`);
+}
+
+// --- Main Execution Logic ---
+function initContentScript() {
+    console.log("Company Happiness Index Content Script loaded.");
+
+    // IMPORTANT: The manifest must allow running on this URL (LinkedIn, Naukri, etc.)
+    const { companyId, targetElement } = findInjectionTarget();
+
+    if (targetElement && companyId) {
+        injectReactApp(companyId, targetElement);
+    } else {
+        console.log("Company Happiness Index: Target injection element not found.");
     }
 }
 
-// Ensure the widget injection runs after the page content is loaded.
+// Ensure the DOM is fully loaded before trying to inject elements
 if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', injectWidget);
+    document.addEventListener('DOMContentLoaded', initContentScript);
 } else {
-    injectWidget();
+    initContentScript();
 }
-
