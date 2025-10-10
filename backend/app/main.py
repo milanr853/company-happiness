@@ -1,15 +1,22 @@
-# FastAPI Main Application: company-happiness/backend/app/main.py
+# File: backend/app/main.py
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware # NEW: Import CORS middleware
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import redis
 import os
-import json
-from .models import CompanyScore, FactorScore 
-from .scraper import get_company_data
-from .gemini_service import GeminiService 
+import asyncio
+from typing import List, Dict, Any, Optional
 
-# Load environment variables (REDIS_HOST, REDIS_PORT, GEMINI_API_KEY)
+from .models import CompanyAnalysisReport
+from .gemini_service import GeminiService
+# UPDATED: Importing the dynamic functions from your single `scraper.py` file.
+from .scraper import (
+    get_ambitionbox_reviews,
+    get_glassdoor_reviews,
+    get_reddit_comments
+)
+
+# Load environment variables
 load_dotenv()
 
 # --- Initialize FastAPI App ---
@@ -21,29 +28,18 @@ app = FastAPI(
 )
 
 # --- CORS Configuration ---
-# REQUIRED: Allows the Chrome Extension (different origin) to talk to the local FastAPI server.
-origins = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    # Allow all origins for local testing with the extension ID prefix
-    "chrome-extension://*", 
-]
-
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allowing '*' for all origins during development
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 # --- Global Service Initialization ---
-# Initialize Redis and Gemini Service once at startup
-
 @app.on_event("startup")
 async def startup_event():
-    # 1. Initialize Redis (Will fail if Docker/Server not running, setting app.state.redis = None)
     try:
         app.state.redis = redis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
@@ -55,16 +51,14 @@ async def startup_event():
         print("Redis connection SUCCESSFUL.")
     except Exception as e:
         print(f"Redis connection FAILED (running without caching): {e}")
-        app.state.redis = None 
+        app.state.redis = None
 
-    # 2. Initialize Gemini Service 
     try:
         app.state.gemini_service = GeminiService()
         print("GeminiService initialization SUCCESSFUL.")
     except Exception as e:
         print(f"GeminiService initialization FAILED: {e}")
-        app.state.gemini_service = None 
-
+        app.state.gemini_service = None
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -73,77 +67,54 @@ def shutdown_event():
 
 
 # --- Health Check Endpoint ---
-
 @app.get("/health", summary="Basic service health check")
 def read_root():
     return {"status": "ok", "service": "company-happiness-backend"}
 
 
 # --- Core Scoring Endpoint ---
-
-@app.get("/score/{company_id}", response_model=CompanyScore, summary="Get Company Happiness Score")
-def get_company_score(company_id: str):
-    # 1. Prepare data and check cache (always skip cache check for now)
-    company_id = company_id.upper()
-    is_cached = False
+@app.get("/score/{company_id}", response_model=CompanyAnalysisReport, summary="Get Company Happiness Score")
+async def get_company_score(company_id: str):
+    company_id_upper = company_id.upper()
     
-    # 2. Get raw data from scraper
-    raw_data = get_company_data(company_id)
+    if app.state.redis:
+        cached_report = app.state.redis.get(company_id_upper)
+        if cached_report:
+            print(f"✅ Returning cached report for {company_id_upper}")
+            return CompanyAnalysisReport.model_validate_json(cached_report)
+
+    print(f"🚀 Starting dynamic scrape for '{company_id}'...")
+    scraping_tasks = [
+        get_ambitionbox_reviews(company_id),
+        get_glassdoor_reviews(company_id),
+        get_reddit_comments(company_id),
+    ]
     
-    if raw_data["status"] == "No data found":
-        raise HTTPException(status_code=404, detail=f"Company '{company_id}' not found or no data available.")
+    list_of_results = await asyncio.gather(*scraping_tasks)
+    all_reviews = [review for sublist in list_of_results for review in sublist]
 
-    # 3. CORE LOGIC: Use Gemini if available, otherwise use mock
-    if app.state.gemini_service:
-        # --- GEMINI SCORING ENGINE ---
-        try:
-            analysis = app.state.gemini_service.get_structured_scores(
-                company_id=company_id,
-                review_text=raw_data["reviews"],
-                numeric_ratings=raw_data["numeric_ratings"]
-            )
-
-            # Convert AI output to our API model format
-            key_factors_output = [
-                FactorScore(
-                    factor_name=f.factor_name, 
-                    score=f.score, 
-                    description=f.ai_description
-                ) for f in analysis.factors
-            ]
-            
-            # Calculate overall score (simple average of factor scores for simulation)
-            overall = round(sum(f.score for f in key_factors_output) / len(key_factors_output), 2)
-
-            return CompanyScore(
-                company_id=company_id,
-                overall_score=overall,
-                is_cached=is_cached,
-                key_factors=key_factors_output,
-                status="Gemini Pro Scoring Active"
-            )
-        except Exception as e:
-            print(f"FATAL GEMINI SCORING ERROR, FALLING BACK: {e}")
-            # Fall through to mock logic if Gemini fails mid-request
-            pass 
-            
-    # --- MOCK SCORING ENGINE (Fallback) ---
-    numeric_ratings = raw_data["numeric_ratings"]
-    wlb = numeric_ratings.get("Work-life balance", 3.0) * 0.25
-    culture = numeric_ratings.get("Culture & Ethics", 3.0) * 0.25
-    salary = numeric_ratings.get("Salary & Career Growth", 3.0) * 0.25
-    satisfaction = numeric_ratings.get("Employee Satisfaction", 3.0) * 0.25
-    overall = round(wlb + culture + salary + satisfaction, 2)
+    if not all_reviews:
+        raise HTTPException(status_code=404, detail=f"Company '{company_id}' not found or no data could be scraped from any source.")
     
-    return CompanyScore(
-        company_id=company_id,
-        overall_score=overall,
-        is_cached=is_cached,
-        key_factors=[
-            FactorScore(factor_name="Work-life balance", score=round(wlb * 4, 1), description="Calculated from mock reviews (Fallback)."),
-            FactorScore(factor_name="Culture & Ethics", score=round(culture * 4, 1), description="Calculated from mock reviews (Fallback)."),
-            FactorScore(factor_name="Salary & Career Growth", score=round(salary * 4, 1), description="Calculated from mock reviews (Fallback)."),
-            FactorScore(factor_name="Employee Satisfaction", score=round(satisfaction * 4, 1), description="Calculated from mock reviews (Fallback)."),
-        ],
-        status="Mock Scoring Engine Active (Gemini Failed)"
-    )
+    print(f"📊 Found a total of {len(all_reviews)} reviews/comments for '{company_id}'.")
+    
+    if not app.state.gemini_service:
+         raise HTTPException(status_code=503, detail="Gemini Service is not available.")
+    
+    try:
+        print(f"🤖 Sending {len(all_reviews)} reviews to Gemini for analysis...")
+        report = app.state.gemini_service.get_structured_scores(
+            company_id=company_id,
+            review_text=all_reviews,
+            numeric_ratings={}
+        )
+
+        if app.state.redis:
+            app.state.redis.set(company_id_upper, report.model_dump_json(), ex=86400)
+            print(f"💾 Cached new report for {company_id_upper}")
+
+        return report
+
+    except RuntimeError as e:
+        print(f"❌ FATAL GEMINI SCORING ERROR: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate score from Gemini.")
