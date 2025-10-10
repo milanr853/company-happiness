@@ -1,79 +1,79 @@
-# Gemini Pro Service: company-happiness/backend/app/gemini_service.py
+# File: backend/app/gemini_service.py
 import os
 import json
-from google import genai
-from google.genai import types
-from typing import List, Dict, Any
-from pydantic import BaseModel, Field
-from .models import CompanyAnalysisReport # Import the new model
+import requests
+from typing import List, Dict
+from .models import CompanyAnalysisReport
 
-# --- Gemini Service Class ---
+# FINAL FIX: Using the stable v1 endpoint instead of v1beta
+API_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
 
 class GeminiService:
-    """Handles communication and structured scoring using the Gemini API."""
+    """
+    Handles communication with the Gemini API via direct HTTP requests.
+    """
     def __init__(self):
-        # Initialize client using API key from environment variables
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
-            # NOTE: We raise ValueError here, which is caught gracefully in app.main.py
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if not self.api_key or self.api_key == "YOUR_GEMINI_API_KEY_HERE":
             raise ValueError("GEMINI_API_KEY environment variable not set or invalid.")
-        self.client = genai.Client(api_key=api_key)
-        self.model = 'gemini-2.5-flash' # Using flash for speed/cost efficiency for structured data
 
     def get_structured_scores(self, company_id: str, review_text: List[str], numeric_ratings: Dict[str, float]) -> CompanyAnalysisReport:
-        """
-        Analyzes review text and numeric ratings using Gemini Pro to generate 
-        structured, factor-based scores and descriptions based on the 5-category framework.
-        """
         
-        # 1. Define the System Instruction (Persona & Rules)
-        system_instruction = (
-            "You are a World-Class HR and Financial Analyst specialized in sentiment analysis. "
-            "Analyze the provided raw employee reviews to generate a structured report for the company. "
-            "Scores MUST range from 1.0 to 10.0 (where 10.0 is best). "
-            "Your output MUST strictly be a JSON object conforming to the provided schema. "
-            "Base the analysis on the following 5 key categories, paying close attention to the concepts and keywords for each:\n\n"
-            "1. **Growth and Development**: Concepts like career growth, salary hikes, mentorship, and adoption of new technologies.\n"
-            "2. **Stress and Burnout**: Concepts like work-life balance, high pressure, toxicity, poor management, and unrealistic deadlines.\n"
-            "3. **Ethics and Culture**: Concepts like work environment, transparency, diversity, and leadership style.\n"
-            "4. **Security and Stability**: Concepts like job security, risk of layoffs, company authenticity, and employee trust in the business's future.\n"
-            "5. **Employee Satisfaction and Retention**: Concepts like health/well-being support, perks, rewards, and recognition.\n\n"
-            "The final overall_score (0.0 to 5.0) should be a weighted average of these five factor scores."
-        )
-
-        # 2. Define the User Prompt (The Data and Task)
-        prompt = f"""
-        Analyze the sentiment in the following employee reviews and combine it with the provided numeric ratings 
-        to score the company based on the 5-category framework.
-
-        Company ID: {company_id}
+        # NOTE: The system instruction is removed from the payload for the v1 endpoint.
+        # The instructions are now directly in the main prompt.
         
-        --- RAW TEXT REVIEWS ---
-        {json.dumps(review_text)}
-
-        --- NUMERIC RATINGS (from Glassdoor/AmbitionBox) ---
-        {json.dumps(numeric_ratings)}
-
-        --- TASK ---
-        Generate the analysis breakdown for the 5 categories. Calculate the final overall score (0.0-5.0).
-        Return the results as a JSON object adhering STRICTLY to the CompanyAnalysisReport schema.
-        """
-
-        # 3. Call the Gemini API with structured output configuration
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=CompanyAnalysisReport, # Pydantic model defines the output structure
-                )
+        reviews_prompt_part = f"--- Raw Employee Reviews ---\n{json.dumps(review_text)}"
+        if not review_text:
+            reviews_prompt_part = (
+                "--- Raw Employee Reviews ---\n"
+                "No specific reviews were provided."
             )
-            
-            # The response text contains the JSON string
-            return CompanyAnalysisReport.model_validate_json(response.text)
 
+        prompt = f"""
+        You are an expert HR Analyst. Analyze the company named '{company_id}' based on general public knowledge and the following reviews if provided.
+        {reviews_prompt_part}
+
+        Generate a structured report based on these 5 factors: Growth and Development, Stress and Burnout, Ethics and Culture, Security and Stability, and Employee Satisfaction and Retention.
+        
+        - All 'sentiment_score' values must be a float between 1.0 and 10.0.
+        - The 'overall_score' must be a float between 0.0 and 5.0.
+        - If no reviews are provided, state in the 'sentiment_summary' that the analysis is based on general knowledge.
+        
+        Your response MUST be ONLY the raw JSON object that strictly follows this Pydantic schema, with no other text or markdown:
+        
+        class DetailedFactorAnalysis(BaseModel):
+            category_name: str
+            sentiment_score: float
+            sentiment_summary: str
+            key_quotes: List[str]
+
+        class CompanyAnalysisReport(BaseModel):
+            company_name: str
+            overall_score: float
+            analysis_breakdown: List[DetailedFactorAnalysis]
+        """
+
+        # Construct the payload for the v1 endpoint
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json"}
+        }
+
+        headers = {'Content-Type': 'application/json'}
+        url = f"{API_ENDPOINT}?key={self.api_key}"
+
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            response_json = response.json()
+            json_text = response_json["candidates"][0]["content"]["parts"][0]["text"]
+            
+            return CompanyAnalysisReport.model_validate_json(json_text)
+
+        except requests.exceptions.HTTPError as http_err:
+            print(f"❌ Gemini API HTTP Error: {http_err} - Response: {http_err.response.text}")
+            raise RuntimeError(f"HTTP error from Gemini API: {http_err}")
         except Exception as e:
-            print(f"Gemini API Error: {e}")
+            print(f"❌ A fatal error occurred in GeminiService: {e}")
             raise RuntimeError(f"Failed to get structured score from Gemini API: {e}")

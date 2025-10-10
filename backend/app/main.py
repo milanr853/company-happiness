@@ -5,11 +5,10 @@ from dotenv import load_dotenv
 import redis
 import os
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from .models import CompanyAnalysisReport
 from .gemini_service import GeminiService
-# UPDATED: Importing the dynamic functions from your single `scraper.py` file.
 from .scraper import (
     get_ambitionbox_reviews,
     get_glassdoor_reviews,
@@ -93,19 +92,21 @@ async def get_company_score(company_id: str):
     list_of_results = await asyncio.gather(*scraping_tasks)
     all_reviews = [review for sublist in list_of_results for review in sublist]
 
+    # UPDATED: We no longer raise an error if no reviews are found.
+    # We will let Gemini do its best with the company name alone.
     if not all_reviews:
-        raise HTTPException(status_code=404, detail=f"Company '{company_id}' not found or no data could be scraped from any source.")
-    
-    print(f"📊 Found a total of {len(all_reviews)} reviews/comments for '{company_id}'.")
+        print(f"⚠️ No reviews found for '{company_id}' from any source. Proceeding with company name only.")
+    else:
+        print(f"📊 Found a total of {len(all_reviews)} reviews/comments for '{company_id}'.")
     
     if not app.state.gemini_service:
          raise HTTPException(status_code=503, detail="Gemini Service is not available.")
     
     try:
-        print(f"🤖 Sending {len(all_reviews)} reviews to Gemini for analysis...")
+        print(f"🤖 Sending data to Gemini for analysis...")
         report = app.state.gemini_service.get_structured_scores(
             company_id=company_id,
-            review_text=all_reviews,
+            review_text=all_reviews, # This will be an empty list if no data was scraped
             numeric_ratings={}
         )
 
