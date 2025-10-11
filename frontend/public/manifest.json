@@ -18,11 +18,11 @@
         "https://www.glassdoor.co.in/*",
         "https://www.ambitionbox.com/*"
       ],
-      // FIX: CSS entry REMOVED. We will load CSS inside the JS script.
-      "js": ["content-script.js"]
+      "js": [
+        "content-script.js"
+      ]
     }
   ],
-  // Retaining the web_accessible_resources block for safety
   "web_accessible_resources": [
     {
       "resources": [
@@ -38,4 +38,3 @@
     }
   ]
 }
-
