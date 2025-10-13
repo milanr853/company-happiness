@@ -1,8 +1,9 @@
-// This script's only job is to run on LinkedIn and find company names.
+// FILE: frontend/src/content-script.tsx
+// This is the user's working version with the filter added.
 
 // --- Site-Specific Selectors ---
 const COMPANY_SELECTORS: { [key: string]: string } = {
-    // Using the stable 'subtitle' class from LinkedIn's Artdeco design system.
+    // --- RESTORED: Going back to the original selector that correctly finds elements ---
     'linkedin.com': '.artdeco-entity-lockup__subtitle',
 };
 
@@ -11,7 +12,6 @@ function getSiteCompanies(): string[] {
     const hostname = window.location.hostname;
     let selector = '';
 
-    // Find the correct selector for the current site.
     for (const key in COMPANY_SELECTORS) {
         if (hostname.includes(key)) {
             selector = COMPANY_SELECTORS[key];
@@ -20,7 +20,7 @@ function getSiteCompanies(): string[] {
     }
 
     if (!selector) {
-        console.log("[H.I.] Content Script: This site is not supported for company name scraping.");
+        console.log("[H.I.] Content Script: This site is not supported.");
         return [];
     }
 
@@ -29,8 +29,9 @@ function getSiteCompanies(): string[] {
 
     companyElements.forEach(el => {
         let name = el.textContent?.trim();
-        if (name && name.length > 2) {
-            // Basic cleanup to remove ratings sometimes included in the text
+        
+        // --- THIS IS THE FIX: Check for "followers" BEFORE adding the name ---
+        if (name && name.length > 2 && !name.toLowerCase().includes('followers')) {
             name = name.split(/\s[0-9\.]+[\u2605\u2b50]/)[0].trim();
             companyNames.add(name);
         }
@@ -51,7 +52,6 @@ function initContentScript() {
         if (request.action === "GET_COMPANIES") {
             const companies = getSiteCompanies();
             sendResponse(companies);
-            // Must return true to indicate an async response for promise-based senders.
             return true;
         }
     });

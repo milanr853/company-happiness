@@ -1,68 +1,69 @@
 # File: backend/app/scraper.py
 import asyncio
 import re
-from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup
+import os
 from typing import List
+import praw
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-}
+# --- Reddit API Initialization ---
+try:
+    reddit = praw.Reddit(
+        client_id=os.getenv("REDDIT_CLIENT_ID"),
+        client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+        user_agent=os.getenv("REDDIT_USER_AGENT"), read_only=True
+    )
+    print("✅ Reddit (PRAW) initialization SUCCESSFUL.")
+except Exception as e:
+    reddit = None
+    print(f"❌ Reddit (PRAW) initialization FAILED: {e}. Reddit will be skipped.")
 
-def format_company_name_for_url(company_name: str) -> str:
-    s = re.sub(r'[^\w\s-]', '', company_name)
-    s = re.sub(r'\s+', '-', s).lower()
-    return s.strip('-')
-
-async def get_ambitionbox_reviews(company_name: str) -> List[str]:
-    print(f"🚀 Scraping AmbitionBox for '{company_name}'...")
-    reviews = []
-    formatted_name = format_company_name_for_url(company_name)
-    url = f"https://www.ambitionbox.com/reviews/{formatted_name}-reviews"
-
-    try:
-        async with async_playwright() as p:
-            # --- THIS IS THE FIX: Changed headless=False back to headless=True ---
-            # The browser will now run silently in the background.
-            browser = await p.chromium.launch(headless=True, slow_mo=50) 
-            
-            context = await browser.new_context(
-                user_agent=HEADERS['User-Agent'],
-                java_script_enabled=True,
-                viewport={'width': 1280, 'height': 720}
-            )
-            page = await context.new_page()
-            
-            await page.goto(url, timeout=90000, wait_until='domcontentloaded')
-            await page.wait_for_timeout(3000) 
-            review_card_selector = "div.review-card-chunk"
-            await page.wait_for_selector(review_card_selector, timeout=25000)
-
-            html_content = await page.content()
-            await browser.close()
-
-        soup = BeautifulSoup(html_content, 'html.parser')
-        review_elements = soup.select(f"{review_card_selector} p.text-gray-90")
-
-        for element in review_elements:
-            if element.text:
-                reviews.append(element.text.strip())
-        
-        if reviews:
-            print(f"✅ SUCCESS! Scraped {len(reviews)} reviews for '{company_name}'.")
-        else:
-            print(f"⚠️ Scraper connected but found 0 review texts for '{company_name}'.")
-        
-        return reviews
-
-    except Exception as e:
-        print(f"❌ FINAL SCRAPER ERROR for '{company_name}': {e}")
-        return []
-
-# --- Placeholder functions ---
-async def get_glassdoor_reviews(company_name: str) -> List[str]:
-    return []
+# --- Scraper Implementations (Optimized for Speed) ---
 
 async def get_reddit_comments(company_name: str) -> List[str]:
+    """Our primary, fast, and reliable data source."""
+    if not reddit: return []
+    print(f"🚀 Searching Reddit for '{company_name}'...")
+    def search_reddit_sync():
+        comments = []
+        query = f'"{company_name}" employee OR review OR salary'
+        # Expanded subreddits for more data
+        for subreddit_name in ['jobs', 'cscareerquestions', 'layoffs', 'recruitinghell', 'antiwork', 'ExperiencedDevs']:
+            for submission in reddit.subreddit(subreddit_name).search(query, limit=5, sort="relevance"):
+                submission.comments.replace_more(limit=0)
+                for comment in submission.comments.list():
+                    if comment.body and len(comment.body) > 100:
+                        comments.append(f"Reddit Comment: {comment.body}")
+        return comments
+    try:
+        comment_list = await asyncio.to_thread(search_reddit_sync)
+        print(f"✅ Reddit: Found {len(comment_list)} comments for '{company_name}'.")
+        return comment_list
+    except Exception as e:
+        print(f"❌ Reddit Search Error for '{company_name}': {e}")
+        return []
+
+# --- Deactivated Scrapers ---
+# These are disabled to ensure a fast response time.
+
+async def get_ambitionbox_reviews(company_name: str) -> List[str]:
+    print("-> AmbitionBox scraper is deactivated.")
+    return []
+
+async def get_glassdoor_reviews(company_name: str) -> List[str]:
+    print("-> Glassdoor scraper is deactivated.")
+    return []
+
+async def get_indeed_reviews(company_name: str) -> List[str]:
+    print("-> Indeed scraper is deactivated.")
+    return []
+
+async def get_comparably_reviews(company_name: str) -> List[str]:
+    print("-> Comparably scraper is deactivated.")
+    return []
+
+async def get_blind_reviews(company_name: str) -> List[str]:
+    print("-> Scraper for Blind not implemented.")
+    return []
+async def get_quora_answers(company_name: str) -> List[str]:
+    print("-> Scraper for Quora not implemented.")
     return []

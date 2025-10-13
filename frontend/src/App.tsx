@@ -1,121 +1,123 @@
-// Main Extension Popup (Aggregated View): company-happiness/frontend/src/App.tsx
+// FILE: frontend/src/App.tsx
 import { useState, useEffect, useCallback } from 'react';
-// FIXED: Import the corrected types from the service
 import { getCompanyScore, DetailedFactorAnalysis, CompanyResult, CompanyAnalysisReport } from './apiService';
 import './index.css';
 
-// --- Component for a Single Factor ---
-const FactorItem: React.FC<{ factor: DetailedFactorAnalysis }> = ({ factor }) => (
-    <div className="flex items-start justify-between py-1 border-b border-gray-100">
-        <p className="text-sm text-gray-700">{factor.category_name}</p>
-        <p className={`text-sm font-bold ml-4 ${factor.sentiment_score >= 7.0 ? 'text-green-600' : factor.sentiment_score >= 5.0 ? 'text-yellow-600' : 'text-red-600'}`}>
-            {factor.sentiment_score.toFixed(1)}/10
-        </p>
-    </div>
-);
-
-// --- Component for a Single Company Card ---
-const CompanyCard: React.FC<{ result: CompanyResult }> = ({ result }) => {
-    if (result.error) {
-        return (
-            <div className="p-3 bg-red-100 border border-red-400 rounded-lg mb-4">
-                <h3 className="text-md font-bold text-red-700">{result.name}</h3>
-                <p className="text-sm text-red-600 mt-1">Error: {result.error}</p>
-            </div>
-        );
-    }
-
-    const status = "Live Analysis";
-
+// --- Polished Component for a Single Factor ---
+const FactorItem: React.FC<{ factor: DetailedFactorAnalysis }> = ({ factor }) => {
+    const scoreColor = factor.sentiment_score >= 7.0 ? 'text-green-600' : factor.sentiment_score >= 4.0 ? 'text-yellow-600' : 'text-red-600';
     return (
-        <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm mb-4">
-            <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-indigo-800">{result.company_name}</h3>
-                <h1 className="text-3xl font-extrabold text-indigo-900 ml-4">
-                    {result.overall_score.toFixed(2)}
-                    <span className="text-base font-normal text-indigo-600">/ 5.0</span>
-                </h1>
-            </div>
-
-            <div className="mt-2 space-y-1">
-                {/* FIXED: No more errors here, as 'analysis_breakdown' is now a valid property */}
-                {result.analysis_breakdown.map((factor, index) => (
-                    <FactorItem key={index} factor={factor} />
-                ))}
-            </div>
-            <p className="text-xs text-gray-500 mt-2 italic border-t pt-2">
-                {/* FIXED: Added optional chaining to prevent crash if analysis_breakdown is empty */}
-                Summary: {result.analysis_breakdown?.[0]?.sentiment_summary || 'No summary available.'} (Status: {status})
+        <div className="flex items-center justify-between py-1.5">
+            <p className="text-sm text-slate-600">{factor.category_name}</p>
+            <p className={`text-sm font-semibold ml-4 ${scoreColor}`}>
+                {factor.sentiment_score.toFixed(1)}
+                <span className="text-xs text-slate-400 font-normal">/10</span>
             </p>
         </div>
     );
 };
 
+// --- Polished Component for a Single Company Card ---
+const CompanyCard: React.FC<{ result: CompanyResult }> = ({ result }) => {
+    if (result.error) {
+        return (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <h3 className="font-semibold text-red-800">{result.name}</h3>
+                <p className="text-sm text-red-700 mt-1">Error: {result.error}</p>
+            </div>
+        );
+    }
+    const overallScoreColor = result.overall_score >= 4.0 ? 'text-green-700' : result.overall_score >= 2.5 ? 'text-yellow-700' : 'text-red-700';
+    return (
+        <div className="bg-white border border-slate-200/80 rounded-lg shadow-sm transition-all hover:shadow-md p-4">
+            <div className="flex items-start justify-between">
+                <h3 className="text-lg font-bold text-slate-800">{result.company_name}</h3>
+                <div className="text-right ml-4">
+                    <span className={`text-3xl font-bold ${overallScoreColor}`}>{result.overall_score.toFixed(2)}</span>
+                    <span className="text-slate-400">/5.0</span>
+                </div>
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-2 space-y-1">
+                {result.analysis_breakdown.map((factor, index) => (
+                    <FactorItem key={index} factor={factor} />
+                ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-100">
+                <strong>Summary:</strong> {result.analysis_breakdown?.[0]?.sentiment_summary || 'No summary available.'}
+            </p>
+        </div>
+    );
+};
+
+// --- Professional Skeleton Loader ---
+const SkeletonCard: React.FC = () => (
+    <div className="p-4 bg-white border border-slate-200/80 rounded-lg shadow-sm animate-pulse">
+        <div className="flex items-start justify-between">
+            <div className="h-6 bg-slate-200 rounded w-1/2"></div>
+            <div className="h-8 bg-slate-200 rounded w-1/4"></div>
+        </div>
+        <div className="mt-4 space-y-2 border-t pt-2">
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+        </div>
+    </div>
+);
+
 
 // --- Main Popup Component ---
 function App() {
-    const [companies, setCompanies] = useState<string[]>([]);
     const [results, setResults] = useState<CompanyResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [pageStatus, setPageStatus] = useState("Waiting for Company List...");
+    const [statusMessage, setStatusMessage] = useState("Initializing...");
 
     const getCompaniesFromContentScript = useCallback(async (): Promise<string[]> => {
-        setPageStatus("Requesting company list from active tab...");
-
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-        if (!tab || !tab.id) {
-            setPageStatus("Error: Could not find active tab.");
-            return [];
-        }
-
+        setStatusMessage("Scanning page for companies...");
         try {
-            // FIXED (TS2769, TS2339): Use modern async/await for sendMessage and wrap in try/catch.
-            // This is the correct way to handle potential errors without checking chrome.runtime.lastError.
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.id) throw new Error("Could not find active tab.");
+            
             const response = await chrome.tabs.sendMessage(tab.id, { action: "GET_COMPANIES" });
-
             if (response && Array.isArray(response)) {
-                setPageStatus(`Found ${response.length} unique companies.`);
+                if (response.length === 0) {
+                    setStatusMessage("No companies found on this page.");
+                } else {
+                    setStatusMessage(`Found ${response.length} companies. Analyzing...`);
+                }
                 return response;
             }
+            throw new Error("Invalid response from content script.");
         } catch (e) {
-            setPageStatus("Error communicating with Content Script. Is the extension enabled for this page?");
+            setStatusMessage("Error: Could not communicate with the page. Please refresh.");
             console.error("Content Script Comms Error:", e);
+            return [];
         }
-        return [];
     }, []);
 
     const fetchAllScores = useCallback(async (companyList: string[]) => {
         const fetchPromises = companyList.map(name =>
             getCompanyScore(name)
-                // Map the successful report to the UI structure (CompanyResult)
                 .then((report: CompanyAnalysisReport) => ({ ...report, name, error: undefined } as CompanyResult))
-                // FIXED (TS2352): Ensure the fallback object matches the CompanyResult type perfectly.
                 .catch((err: Error) => ({
-                    name,
-                    company_name: name, // Provide a fallback name
-                    overall_score: 0,
-                    analysis_breakdown: [],
-                    error: err.message
+                    name, company_name: name, overall_score: 0, analysis_breakdown: [], error: err.message
                 } as CompanyResult))
         );
-
-        setPageStatus(`Fetching scores for ${companyList.length} companies...`);
         const fetchedResults = await Promise.all(fetchPromises);
         setResults(fetchedResults);
-        setPageStatus("Analysis Complete.");
-
+        setStatusMessage("Analysis Complete.");
     }, []);
 
     const refreshAnalysis = useCallback(async () => {
         setIsLoading(true);
         setResults([]);
         const companyList = await getCompaniesFromContentScript();
-        setCompanies(companyList);
 
         if (companyList.length > 0) {
             await fetchAllScores(companyList);
         }
+        
+        // --- THIS IS THE FIX ---
+        // setIsLoading(false) is now at the end of the function, so it will always run.
         setIsLoading(false);
     }, [getCompaniesFromContentScript, fetchAllScores]);
 
@@ -126,55 +128,45 @@ function App() {
     const renderContent = () => {
         if (isLoading) {
             return (
-                <div className="text-center p-6">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto"></div>
-                    <p className="mt-4 text-gray-500">Scanning page and analyzing data...</p>
+                <div className="p-4 space-y-4">
+                    <SkeletonCard /><SkeletonCard />
                 </div>
             );
         }
-
-        if (results.length === 0 && companies.length > 0) {
-            return <p className="p-4 text-red-600">Error fetching all scores. Check the background console.</p>;
-        }
-
-        if (results.length === 0 && companies.length === 0) {
+        if (results.length === 0) {
             return (
-                <div className="p-4 text-center">
-                    <p className="text-gray-600">No company listings detected on this page.</p>
-                    <p className="text-xs text-gray-400 mt-2">{pageStatus}</p>
+                <div className="p-6 text-center">
+                    <p className="text-slate-700 font-semibold">No Companies Found</p>
+                    <p className="text-sm text-slate-500 mt-2">{statusMessage}</p>
                 </div>
             );
         }
-
         return (
-            <div className="p-4">
-                <p className="text-sm text-gray-500 mb-3">{pageStatus}</p>
-                <div className="space-y-4">
-                    {results.map((result, index) => (
-                        <CompanyCard key={index} result={result} />
-                    ))}
-                </div>
+            <div className="p-4 space-y-4">
+                {results.map((result, index) => (
+                    <CompanyCard key={index} result={result} />
+                ))}
             </div>
         );
     };
 
     return (
-        <div className="w-96 min-h-[300px] max-h-[500px] overflow-y-auto font-sans bg-gray-50 shadow-xl rounded-xl overflow-x-hidden">
-            <div className="sticky top-0 bg-indigo-700 text-white p-3 shadow-md">
-                <h1 className="text-xl font-bold">Company Happiness Index (Aggregated)</h1>
-            </div>
-
-            {renderContent()}
-
-            <div className="p-3 border-t border-gray-200">
+        <div className="w-96 min-h-[300px] max-h-[580px] overflow-y-auto font-sans bg-slate-50 shadow-2xl rounded-lg">
+            <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 p-4">
+                <h1 className="text-lg font-bold text-slate-900">Company Happiness Index</h1>
+                <p className="text-xs text-slate-500 -mt-0.5">{statusMessage}</p>
+                <div className={`absolute bottom-0 left-0 h-0.5 bg-indigo-500 transition-all duration-500 ${isLoading ? 'w-full animate-pulse' : 'w-0'}`}></div>
+            </header>
+            <main>{renderContent()}</main>
+            <footer className="sticky bottom-0 bg-white/80 backdrop-blur-md border-t border-slate-200 p-3">
                 <button
                     onClick={refreshAnalysis}
-                    className="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors disabled:bg-indigo-400"
+                    className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all disabled:bg-indigo-400 disabled:cursor-not-allowed"
                     disabled={isLoading}
                 >
-                    {isLoading ? "Analyzing..." : "Refresh Page Analysis"}
+                    {isLoading ? "Analyzing..." : "Refresh Analysis"}
                 </button>
-            </div>
+            </footer>
         </div>
     );
 }

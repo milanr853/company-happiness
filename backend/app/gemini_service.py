@@ -6,7 +6,7 @@ import requests
 from typing import List, Dict
 from .models import CompanyAnalysisReport
 
-API_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"
+API_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent"
 
 class GeminiService:
     def __init__(self):
@@ -15,26 +15,28 @@ class GeminiService:
             raise ValueError("GEMINI_API_KEY environment variable not set or invalid.")
         print("✅ Live GeminiService initialization SUCCESSFUL.")
 
+    # Keeping this as a standard 'def' function
     def get_structured_scores(self, company_id: str, review_text: List[str], numeric_ratings: Dict[str, float]) -> CompanyAnalysisReport:
         
-        has_reviews = bool(review_text)
         reviews_prompt_part = f"--- Raw Employee Reviews ---\n{json.dumps(review_text)}"
-        if not has_reviews:
+        if not review_text:
             reviews_prompt_part = "--- Raw Employee Reviews ---\nNo specific reviews were provided for analysis."
 
-        # Final prompt with instructions for the "no reviews" case
+        # FINAL PROMPT FIX: Explicitly commanding the AI about the key_quotes field.
         prompt = f"""
         You are an expert HR Analyst. Analyze the company named '{company_id}'.
         {reviews_prompt_part}
 
-        Generate a structured JSON report based on the 5 factors.
+        Generate a structured JSON report.
 
-        **STRICT INSTRUCTIONS:**
-        1. Your response MUST be ONLY the raw JSON object, without any markdown like ```json.
-        2. The keys in the JSON object MUST EXACTLY match the required field names: `company_name`, `overall_score`, `analysis_breakdown`.
-        3. Each object inside `analysis_breakdown` MUST have these exact keys: `category_name`, `sentiment_score`, `sentiment_summary`, `key_quotes`.
-        4. **If no reviews are provided (the list is empty), you MUST provide an ESTIMATED score for each category based on your general public knowledge of the company, its industry, and reputation. In the `sentiment_summary` for this case, you MUST state that the score is an estimate based on public data.**
-        5. If reviews ARE provided, base your scores on the sentiment within those reviews.
+        **ABSOLUTELY STRICT RULES:**
+        1. Your response MUST be ONLY the raw JSON object. Do not use markdown.
+        2. All scores MUST be POSITIVE. `sentiment_score` must be between 1.0 and 10.0.
+        3. For `overall_score`, you MUST return a placeholder value of `0.0`.
+        4. The keys in the JSON object MUST EXACTLY match: `company_name`, `overall_score`, `analysis_breakdown`.
+        5. Each object in `analysis_breakdown` MUST have these exact keys: `category_name`, `sentiment_score`, `sentiment_summary`, `key_quotes`.
+        6. **CRITICAL:** The `key_quotes` field MUST ALWAYS be a JSON array. If you cannot find any relevant quotes, you MUST return an empty array `[]`. Do NOT return a string like "No quotes found".
+        7. If no reviews are provided, provide an ESTIMATED `sentiment_score` for each category based on public knowledge.
         
         **JSON SCHEMA TO FOLLOW:**
         ```json
@@ -42,11 +44,8 @@ class GeminiService:
           "company_name": "{company_id}",
           "overall_score": 0.0,
           "analysis_breakdown": [
-            {{ "category_name": "Growth and Development", "sentiment_score": 0.0, "sentiment_summary": "...", "key_quotes": [] }},
-            {{ "category_name": "Stress and Burnout", "sentiment_score": 0.0, "sentiment_summary": "...", "key_quotes": [] }},
-            {{ "category_name": "Ethics and Culture", "sentiment_score": 0.0, "sentiment_summary": "...", "key_quotes": [] }},
-            {{ "category_name": "Security and Stability", "sentiment_score": 0.0, "sentiment_summary": "...", "key_quotes": [] }},
-            {{ "category_name": "Employee Satisfaction and Retention", "sentiment_score": 0.0, "sentiment_summary": "...", "key_quotes": [] }}
+            {{ "category_name": "Growth and Development", "sentiment_score": 1.0, "sentiment_summary": "...", "key_quotes": [] }},
+            {{ "category_name": "Stress and Burnout", "sentiment_score": 1.0, "sentiment_summary": "...", "key_quotes": [] }}
           ]
         }}
         ```
@@ -58,7 +57,7 @@ class GeminiService:
 
         try:
             print(f"✅ Sending live payload to Gemini for '{company_id}'...")
-            response = requests.post(url, headers=headers, json=payload, timeout=120) # Increased timeout
+            response = requests.post(url, headers=headers, json=payload, timeout=180)
             response.raise_for_status()
             response_json = response.json()
             
